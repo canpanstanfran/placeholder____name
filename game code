@@ -1,0 +1,286 @@
+import pygame
+import random
+import sys
+
+pygame.init()
+
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("AWESOME TOWER DEFENCE GAME FOR WINNERS!!!!!")
+
+WHITE = (255, 255, 255)
+RED = (200, 50, 50)
+BLUE = (50, 100, 255)
+GREEN = (50, 200, 50)
+YELLOW = (255, 220, 50)
+BLACK = (0, 0, 0)
+
+CENTER = pygame.Vector2(WIDTH // 2, HEIGHT // 2)
+
+clock = pygame.time.Clock()
+font = pygame.font.SysFont(None, 28)
+
+def draw_text(text, x, y):
+    img = font.render(text, True, WHITE)
+    screen.blit(img, (x, y))
+
+player = pygame.Rect(WIDTH//2 - 15, HEIGHT//2 - 15, 30, 30)
+player_speed = 5
+
+class Enemy:
+    def __init__(self, round_num):
+        edge = random.choice(["top", "bottom", "left", "right"])
+        if edge == "top":
+            self.pos = pygame.Vector2(random.randint(0, WIDTH), 0)
+        elif edge == "bottom":
+            self.pos = pygame.Vector2(random.randint(0, WIDTH), HEIGHT)
+        elif edge == "left":
+            self.pos = pygame.Vector2(0, random.randint(0, HEIGHT))
+        else:
+            self.pos = pygame.Vector2(WIDTH, random.randint(0, HEIGHT))
+
+        self.speed = random.uniform(1 + round_num * 0.2, 2 + round_num * 0.3)
+        self.size = 20
+
+    def move(self):
+        direction = (CENTER - self.pos).normalize()
+        self.pos += direction * self.speed
+
+    def draw(self):
+        pygame.draw.rect(screen, RED, (int(self.pos.x), int(self.pos.y), self.size, self.size))
+
+    def rect(self):
+        return pygame.Rect(int(self.pos.x), int(self.pos.y), self.size, self.size)
+
+
+class Boss:
+    def __init__(self):
+        edge = random.choice(["top", "bottom", "left", "right"])
+        if edge == "top":
+            self.pos = pygame.Vector2(random.randint(0, WIDTH), 0)
+        elif edge == "bottom":
+            self.pos = pygame.Vector2(random.randint(0, WIDTH), HEIGHT)
+        elif edge == "left":
+            self.pos = pygame.Vector2(0, random.randint(0, HEIGHT))
+        else:
+            self.pos = pygame.Vector2(WIDTH, random.randint(0, HEIGHT))
+
+        self.size = 80
+        self.health = 50
+        self.speed = 0.5
+
+    def move(self):
+        direction = (CENTER - self.pos).normalize()
+        self.pos += direction * self.speed
+
+    def draw(self):
+        pygame.draw.rect(screen, GREEN, (int(self.pos.x), int(self.pos.y), self.size, self.size))
+
+    def rect(self):
+        return pygame.Rect(int(self.pos.x), int(self.pos.y), self.size, self.size)
+
+
+class Defender:
+    def __init__(self, pos):
+        self.pos = pygame.Vector2(pos)
+        self.range = 150
+        self.cooldown = 0
+
+    def update(self, enemies, boss, bullets):
+        self.cooldown += 1
+        target = None
+        min_dist = self.range
+
+        for e in enemies:
+            dist = self.pos.distance_to(e.pos)
+            if dist < min_dist:
+                min_dist = dist
+                target = e
+
+        if boss:
+            boss_center = pygame.Vector2(boss.pos.x + boss.size/2, boss.pos.y + boss.size/2)
+            dist = self.pos.distance_to(boss_center)
+            if dist < min_dist:
+                min_dist = dist
+                target = boss
+
+        if target and self.cooldown > 30:
+            if isinstance(target, Boss):
+                target_pos = pygame.Vector2(target.pos.x + target.size/2, target.pos.y + target.size/2)
+            else:
+                target_pos = target.pos
+
+            direction = (target_pos - self.pos).normalize()
+            bullets.append(Bullet(self.pos, direction))
+            self.cooldown = 0
+
+    def draw(self):
+        pygame.draw.circle(screen, YELLOW, (int(self.pos.x), int(self.pos.y)), 10)
+
+
+class Bullet:
+    def __init__(self, pos, direction):
+        self.pos = pygame.Vector2(pos)
+        self.vel = direction * 6
+        self.radius = 4
+
+    def update(self):
+        self.pos += self.vel
+
+    def draw(self):
+        pygame.draw.circle(screen, WHITE, (int(self.pos.x), int(self.pos.y)), self.radius)
+
+    def rect(self):
+        return pygame.Rect(self.pos.x, self.pos.y, self.radius*2, self.radius*2)
+
+
+def reset_game():
+    return {
+        "enemies": [],
+        "round_num": 1,
+        "spawn_timer": 0,
+        "boss": None,
+        "boss_spawned": False,
+        "game_over": False,
+        "money": 0,
+        "score": 0,
+        "last_round_time": 0,
+        "boss_hit_cooldown": 0,
+        "defenders": [],
+        "bullets": [],
+        "placing": False
+    }
+
+game = reset_game()
+
+while True:
+    screen.fill(BLACK)
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_1 and game["money"] >= 10:
+                game["placing"] = True
+
+        if event.type == pygame.MOUSEBUTTONDOWN and game["placing"]:
+            game["defenders"].append(Defender(pygame.mouse.get_pos()))
+            game["money"] -= 10
+            game["placing"] = False
+
+    keys = pygame.key.get_pressed()
+
+    if not game["game_over"]:
+
+        if keys[pygame.K_w]:
+            player.y -= player_speed
+        if keys[pygame.K_s]:
+            player.y += player_speed
+        if keys[pygame.K_a]:
+            player.x -= player_speed
+        if keys[pygame.K_d]:
+            player.x += player_speed
+
+        player.x = max(0, min(WIDTH - player.width, player.x))
+        player.y = max(0, min(HEIGHT - player.height, player.y))
+
+        current_time = pygame.time.get_ticks()
+        if current_time - game["last_round_time"] > 5000:
+            game["round_num"] += 1
+            game["last_round_time"] = current_time
+
+        game["spawn_timer"] += 1
+        if game["spawn_timer"] > max(30 - game["round_num"] * 2, 10):
+            game["enemies"].append(Enemy(game["round_num"]))
+            game["spawn_timer"] = 0
+
+        for enemy in game["enemies"][:]:
+            enemy.move()
+
+            if enemy.rect().collidepoint(CENTER):
+                game["game_over"] = True
+
+            if player.colliderect(enemy.rect()):
+                game["enemies"].remove(enemy)
+                game["money"] += 2
+                game["score"] += 1
+
+        for d in game["defenders"]:
+            d.update(game["enemies"], game["boss"], game["bullets"])
+            d.draw()
+
+        for b in game["bullets"][:]:
+            b.update()
+
+            hit = False
+
+            for e in game["enemies"][:]:
+                if e.rect().colliderect(b.rect()):
+                    game["enemies"].remove(e)
+                    game["money"] += 2
+                    game["score"] += 1
+                    hit = True
+                    break
+
+            if game["boss"] and game["boss"].rect().colliderect(b.rect()):
+                game["boss"].health -= 1
+                hit = True
+
+                if game["boss"].health <= 0:
+                    game["boss"] = None
+                    game["round_num"] += 1
+                    game["boss_spawned"] = False
+                    game["money"] += 20
+                    game["score"] += 10
+
+            if hit:
+                if b in game["bullets"]:
+                    game["bullets"].remove(b)
+                continue
+
+            if not (0 <= b.pos.x <= WIDTH and 0 <= b.pos.y <= HEIGHT):
+                if b in game["bullets"]:
+                    game["bullets"].remove(b)
+                continue
+
+            b.draw()
+
+        if game["round_num"] >= 5 and not game["boss_spawned"]:
+            game["boss"] = Boss()
+            game["boss_spawned"] = True
+
+        if game["boss"]:
+            game["boss"].move()
+
+            if game["boss"].rect().collidepoint(CENTER):
+                game["game_over"] = True
+
+            game["boss"].draw()
+            draw_text(f"Boss HP: {game['boss'].health}", 10, 40)
+
+        pygame.draw.circle(screen, BLUE, (int(CENTER.x), int(CENTER.y)), 20)
+        pygame.draw.rect(screen, WHITE, player)
+
+        for enemy in game["enemies"]:
+            enemy.draw()
+
+        draw_text(f"Round: {game['round_num']}", 10, 10)
+        draw_text(f"Money: {game['money']}", 10, 70)
+        draw_text("Press 1: Buy Defender ($10)", 10, 100)
+
+        if game["placing"]:
+            draw_text("Click to place defender", WIDTH//2 - 120, 10)
+
+    else:
+        draw_text("GAME OVER", WIDTH//2 - 100, HEIGHT//2 - 20)
+        draw_text("Press R to Restart", WIDTH//2 - 140, HEIGHT//2 + 20)
+
+        if keys[pygame.K_r]:
+            player.x = WIDTH//2 - 15
+            player.y = HEIGHT//2 - 15
+            game = reset_game()
+
+    pygame.display.flip()
+    clock.tick(60)
